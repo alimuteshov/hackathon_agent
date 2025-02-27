@@ -1,0 +1,29 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+ENV UV_PROJECT_ENVIRONMENT="/usr/local/"
+ENV UV_COMPILE_BYTECODE=1
+
+COPY pyproject.toml .
+COPY uv.lock .
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gfortran \
+    libopenblas-dev \
+    liblapack-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir uv
+RUN uv sync --frozen --no-install-project --no-dev
+RUN pip install --no-cache-dir numpy==1.22.4 "setuptools<58" "wheel"
+RUN pip install --no-cache-dir faiss-cpu
+
+COPY src/data ./data
+COPY src/agents/ ./agents/
+COPY src/core/ ./core/
+COPY src/memory/ ./memory/
+COPY src/schema/ ./schema/
+COPY src/service/ ./service/
+COPY src/run_service.py .
+
+CMD ["python", "run_service.py"]
