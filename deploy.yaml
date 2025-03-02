@@ -1,0 +1,36 @@
+- name: Gateway play_book
+  hosts: "{{ lookup('env', 'TARGET_STAND') }}"
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    container_name: "{{ lookup('env', 'CONTAINER_NAME') }}"
+    image_name: "{{ lookup('env', 'IMAGE_NAME') }}"
+    g_login: "{{ lookup('env', 'GITLAB_LOGIN') }}"
+    g_pass: "{{ lookup('env', 'GITLAB_PASS') }}"
+    branch_name: "{{ lookup('env', 'CI_COMMIT_BRANCH') }}"
+    repo: "https://{{ g_login }}:{{ g_pass }}@newsmonitoring.hopto.org/dcm_group/models_repos/deduplication.git"
+    reg_login: "gitlab-ci-token"
+    reg_pass: "{{ lookup('env', 'CI_JOB_TOKEN') }}"
+    proj_id: "{{ lookup('env', 'CI_PROJECT_ID') }}"
+    port_alias: "{{ lookup('env', 'PORT_ALIAS') }}"
+    index_url: "https://{{ reg_login }}:{{ reg_pass }}@newsmonitoring.hopto.org/api/v4/projects/{{ proj_id }}/packages/pypi/simple"
+
+
+  tasks:
+    - name: Get CI ANS_* vars to run_vars
+      local_action: ansible.builtin.command python deploy_helper.py
+      connection: local
+      register: run_vars
+
+    - name: Pull existing image from registry
+      command: "docker pull {{ image_name }}"
+
+    - name: Remove old srv container
+      docker_container:
+        name: "{{ container_name }}"
+        state: absent
+
+    - name: Create new srv container
+      command: "docker run -d -ti --restart always -p {{ port_alias }}0:8000 --name {{ container_name }} {{ image_name }} bash -c "  
+
+
+

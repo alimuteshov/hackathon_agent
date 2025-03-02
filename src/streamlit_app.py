@@ -2,7 +2,7 @@ import asyncio
 import os
 import urllib.parse
 from collections.abc import AsyncGenerator
-
+import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 from pydantic import ValidationError
@@ -22,10 +22,18 @@ from schema.task_data import TaskData, TaskDataStatus
 
 # The app heavily uses AgentClient to interact with the agent's FastAPI endpoints.
 
-
-APP_TITLE = "Credit Agent 1"
+FEEDBACK_FILE = 'mount/feedback.xlsx'
+APP_TITLE = "Агент GIGACHAT"
 APP_ICON = "🧰"
+SAMPLE_TEXT = """
+Могу предложить вам следующие шаги:
 
+Постарайтесь улучшить свою кредитную историю, своевременно оплачивая все счета и кредиты.
+Рассмотрите возможность уменьшения своих текущих долгов перед подачей заявки на новый кредит.
+Проверьте свои финансовые обязательства и убедитесь, что вы можете позволить себе дополнительные платежи по кредиту.
+Если у вас возникнут еще какие-либо вопросы или потребуется дополнительная помощь, пожалуйста, дайте знать!
+"""
+CHAT_IMG_LINK = "https://avatars.dzeninfra.ru/get-zen_doc/271828/pub_6599834a2b9c1d03c7f2982f_6599846895509b2d848a7064/scale_1200"
 
 async def main() -> None:
     st.set_page_config(
@@ -83,9 +91,13 @@ async def main() -> None:
 
     # Config options
     with st.sidebar:
+        st.image("https://cdn-app.sbrdvc.xyz/misc/0.0.0/assets/common/e685691c_Group.svg")
+        ""
         st.header(f"{APP_ICON} {APP_TITLE}")
         ""
-        "Full toolkit for running an AI agent service built with LangGraph, FastAPI and Streamlit"
+        "Агент на базе GigaChat-Max. Создан с помощью утилиты LangSmith."
+        "Куликов Ярослав, Утешов Алимбек, Яковлев Павел, Лебедев Степан"
+        ""
         with st.popover(":material/settings: Settings", use_container_width=True):
             model_idx = agent_client.info.models.index(agent_client.info.default_model)
             model = st.selectbox("LLM to use", options=agent_client.info.models, index=model_idx)
@@ -97,52 +109,33 @@ async def main() -> None:
                 index=agent_idx,
             )
             use_streaming = st.toggle("Stream results", value=True)
-
-        @st.dialog("Architecture")
-        def architecture_dialog() -> None:
-            st.image(
-                "https://github.com/JoshuaC215/agent-service-toolkit/blob/main/media/agent_architecture.png?raw=true"
-            )
-            "[View full size on Github](https://github.com/JoshuaC215/agent-service-toolkit/blob/main/media/agent_architecture.png)"
-            st.caption(
-                "App hosted on [Streamlit Cloud](https://share.streamlit.io/) with FastAPI service running in [Azure](https://learn.microsoft.com/en-us/azure/app-service/)"
-            )
-
-        if st.button(":material/schema: Architecture", use_container_width=True):
-            architecture_dialog()
-
-        with st.popover(":material/policy: Privacy", use_container_width=True):
-            st.write(
-                "Prompts, responses and feedback in this app are anonymously recorded and saved to LangSmith for product evaluation and improvement purposes only."
-            )
-
-        @st.dialog("Share/resume chat")
-        def share_chat_dialog() -> None:
-            session = st.runtime.get_instance()._session_mgr.list_active_sessions()[0]
-            st_base_url = urllib.parse.urlunparse(
-                [session.client.request.protocol, session.client.request.host, "", "", "", ""]
-            )
-            # if it's not localhost, switch to https by default
-            if not st_base_url.startswith("https") and "localhost" not in st_base_url:
-                st_base_url = st_base_url.replace("http", "https")
-            chat_url = f"{st_base_url}?thread_id={st.session_state.thread_id}"
-            st.markdown(f"**Chat URL:**\n```text\n{chat_url}\n```")
-            st.info("Copy the above URL to share or revisit this chat")
-
-        if st.button(":material/upload: Share/resume chat", use_container_width=True):
-            share_chat_dialog()
-
-        "[View the source code](https://github.com/JoshuaC215/agent-service-toolkit)"
+        
         st.caption(
-            "Made with :material/favorite: by [Joshua](https://www.linkedin.com/in/joshua-k-carroll/) in Oakland"
+            "Сделано Командой Event Horizon Analysis для Хакатона Рисков 2025"
         )
+
+        with st.popover("Feedback", use_container_width=True):
+            if not os.path.exists(FEEDBACK_FILE):
+                pd.DataFrame({'msg': [SAMPLE_TEXT], 'score': [None]}).to_excel(FEEDBACK_FILE, index=False)
+            feedback_df = pd.read_excel(FEEDBACK_FILE)
+            st.session_state.feedback = feedback_df  # Store initial feedback DataFrame
+            
+            # Add button to refresh the feedback DataFrame
+            if st.button("Обновить feedback"):
+                # Load the latest feedback DataFrame and update the session state
+                feedback_df = pd.read_excel(FEEDBACK_FILE)
+                st.session_state.feedback = feedback_df
+                st.success("Таблица обновлена.")
+
+            # Display the latest feedback DataFrame
+            st.dataframe(st.session_state.feedback)
 
     # Draw existing messages
     messages: list[ChatMessage] = st.session_state.messages
 
     if len(messages) == 0:
-        WELCOME = "Agent version 1"
-        with st.chat_message("ai"):
+        WELCOME = "Чат с ИИ-Агентом"
+        with st.chat_message("ai", avatar=CHAT_IMG_LINK):
             st.write(WELCOME)
 
     # draw_messages() expects an async iterator over messages
@@ -171,7 +164,7 @@ async def main() -> None:
                     thread_id=st.session_state.thread_id,
                 )
                 messages.append(response)
-                st.chat_message("ai").write(response.content)
+                st.chat_message("ai",  avatar=CHAT_IMG_LINK).write(response.content)
             st.rerun()  # Clear stale containers
         except AgentClientError as e:
             st.error(f"Error generating response: {e}")
@@ -208,6 +201,7 @@ async def draw_messages(
     # Keep track of the last message container
     last_message_type = None
     st.session_state.last_message = None
+    st.session_state.last_txt = None
 
     # Placeholder for intermediate streaming tokens
     streaming_content = ""
@@ -222,7 +216,7 @@ async def draw_messages(
             if not streaming_placeholder:
                 if last_message_type != "ai":
                     last_message_type = "ai"
-                    st.session_state.last_message = st.chat_message("ai")
+                    st.session_state.last_message = st.chat_message("ai",  avatar=CHAT_IMG_LINK)
                 with st.session_state.last_message:
                     streaming_placeholder = st.empty()
 
@@ -238,7 +232,7 @@ async def draw_messages(
             case "human":
                 last_message_type = "human"
                 st.chat_message("human").write(msg.content)
-
+                
             # A message from the agent is the most complex case, since we need to
             # handle streaming tokens and tool calls.
             case "ai":
@@ -249,7 +243,7 @@ async def draw_messages(
                 # If the last message type was not AI, create a new chat message
                 if last_message_type != "ai":
                     last_message_type = "ai"
-                    st.session_state.last_message = st.chat_message("ai")
+                    st.session_state.last_message = st.chat_message("ai",  avatar=CHAT_IMG_LINK)
 
                 with st.session_state.last_message:
                     # If the message has content, write it out.
@@ -333,12 +327,12 @@ async def handle_feedback() -> None:
         st.session_state.last_feedback = (None, None)
 
     latest_run_id = st.session_state.messages[-1].run_id
-    feedback = st.feedback("stars", key=latest_run_id)
+    feedback = st.feedback("thumbs", key=latest_run_id)
 
     # If the feedback value or run ID has changed, send a new feedback record
     if feedback is not None and (latest_run_id, feedback) != st.session_state.last_feedback:
         # Normalize the feedback value (an index) to a score between 0 and 1
-        normalized_score = (feedback + 1) / 5.0
+        normalized_score = feedback
 
         agent_client: AgentClient = st.session_state.agent_client
         try:
@@ -353,7 +347,24 @@ async def handle_feedback() -> None:
             st.stop()
         st.session_state.last_feedback = (latest_run_id, feedback)
         st.toast("Feedback recorded", icon=":material/reviews:")
+        
+        # Create new data to append
+        new_data = {'msg': [st.session_state.messages[-1].content], 'score': [normalized_score]}
+        
+        # Load previous feedback DataFrame
+        feedback_df = pd.read_excel(FEEDBACK_FILE)
 
+        # Create a DataFrame for the new feedback entry
+        new_feedback_df = pd.DataFrame(new_data)
+
+        # Use pd.concat to append the new feedback
+        feedback_df = pd.concat([feedback_df, new_feedback_df], ignore_index=True)
+
+        # Save the updated DataFrame back to Excel, removing the unnamed column
+        feedback_df.to_excel(FEEDBACK_FILE, index=False)
+
+        # Update the displayed DataFrame in the UI
+        st.session_state.feedback = feedback_df
 
 if __name__ == "__main__":
     asyncio.run(main())
